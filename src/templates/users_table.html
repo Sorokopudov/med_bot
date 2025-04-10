@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список пользователей</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        button {
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .conversation-history,
+        .scenario-history {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 5px;
+            background-color: #f9f9f9;
+        }
+        .message-block {
+            margin-bottom: 8px;
+            border: 1px solid #ccc;
+            padding: 5px;
+            background-color: #fff;
+        }
+        .message-block pre {
+            white-space: pre-wrap; /* чтобы переносить строки */
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <h1>Список пользователей</h1>
+    <form method="get" action="/add_user">
+        <button type="submit">Добавить пользователя</button>
+    </form>
+    <table>
+        <thead>
+            <tr>
+                <th>ID пользователя</th>
+                <th>Имя</th>
+                <th>Дата рождения</th>
+                <th>Дневник здоровья</th>
+                <th>История диалога</th>
+                <th>История сценария</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user['id'] }}</td>
+                <td>{{ user['name'] }}</td>
+                <td>{{ user['birthday'] }}</td>
+                <td>{{ user['health_diary'] }}</td>
+                <td>
+                    <div class="conversation-history">
+                        {% if user['conversation_history'] %}
+                            {% for message in user['conversation_history'] %}
+                                <div class="message-block">
+                                    <strong>{{ message.role }}:</strong> {{ message.message }}
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p> - </p>
+                        {% endif %}
+                    </div>
+                </td>
+                <td>
+                    <div class="scenario-history">
+                        {% if user['scenario_history'] %}
+                            {% for record in user['scenario_history'] %}
+                                <div class="message-block">
+                                    <!--
+                                         Просто покажем объект record в JSON-формате,
+                                         чтобы было видно все поля: role, stepId, messages и т.д.
+                                    -->
+                                    <pre>{{ record | tojson(indent=2) }}</pre>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p> - </p>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
