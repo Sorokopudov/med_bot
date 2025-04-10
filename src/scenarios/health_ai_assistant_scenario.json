@@ -1,0 +1,293 @@
+{
+  "scenarioId": "health_ai_assistant_scenario",
+  "scenarioName": "Настройка AI-ассистента",
+  "isMain": true,
+  "firstStepId": "greeting_step",
+  "steps": [
+    {
+      "stepId": "greeting_step",
+      "name": "Приветствие и начало общения",
+      "introMessage": "Hey there! 🌟 I'm Eshe, your personal guide to feeling your best every day...",
+      "messages": [
+        "Hey there! 🌟 I'm Eshe, your personal guide to feeling your best every day. Let's make sure you get the most from me! 💛",
+        "How are you feeling today? This will help me suggest something useful right away. 😊"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_good",
+          "title": "Feeling great! 🎉",
+          "nextActionId": "setup_prompt_step"
+        },
+        {
+          "id": "btn_okay",
+          "title": "I'm okay 😊",
+          "nextActionId": "setup_prompt_step"
+        },
+        {
+          "id": "btn_not_great",
+          "title": "Not so great... 😞",
+          "nextActionId": "quick_support_step"
+        },
+        {
+          "id": "btn_subscribe",
+          "title": "I want a subscription! 🎉",
+          "onClick": "SUBSCRIBE",
+          "nextActionId": "finish"
+        }
+      ],
+      "possibleUserAnswers": [
+        {
+          "answerPattern": "Feeling great!|btn_good",
+          "assistantReaction": {
+            "message": "Awesome! Let's move on to the setup. 💪",
+            "actions": [],
+            "nextStepId": "setup_prompt_step"
+          }
+        },
+        {
+          "answerPattern": "Not so great|btn_not_great",
+          "assistantReaction": {
+            "message": "I hear you. 💛 Sometimes we just need a moment to breathe...",
+            "actions": [],
+            "nextStepId": "quick_support_step"
+          }
+        }
+      ]
+    },
+    {
+      "stepId": "quick_support_step",
+      "name": "Быстрая поддержка",
+      "introMessage": "I hear you. 💛 Sometimes we just need a moment to breathe...",
+      "messages": [
+        "I hear you. 💛 Sometimes we just need a moment to breathe. Would you like some help right now?"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_meditation",
+          "title": "Listen to a short meditation 🧘🏽‍♀️",
+          "prompt": "Send me a link to the meditation section",
+          "onClick": "REQUEST_GPT"
+        },
+        {
+          "id": "btn_breathing",
+          "title": "Try a calming breath exercise 🌿",
+          "prompt": "Send me a link to the section with breathing exercises",
+          "onClick": "REQUEST_GPT"
+        },
+        {
+          "id": "btn_no",
+          "title": "Not now, just continue",
+          "nextActionId": "setup_prompt_step"
+        }
+      ],
+      "possibleUserAnswers": [
+        {
+          "answerPattern": "meditation|btn_meditation",
+          "assistantReaction": {
+            "message": "Here's a meditation link for you…",
+            "actions": ["REQUEST_GPT"],
+            "nextStepId": "setup_prompt_step"
+          }
+        },
+        {
+          "answerPattern": "breathing|btn_breathing",
+          "assistantReaction": {
+            "message": "Here's a calming breath exercise link…",
+            "actions": ["REQUEST_GPT"],
+            "nextStepId": "setup_prompt_step"
+          }
+        },
+        {
+          "answerPattern": "no|btn_no",
+          "assistantReaction": {
+            "message": "No problem! Let's keep going. 💛",
+            "actions": [],
+            "nextStepId": "setup_prompt_step"
+          }
+        }
+      ]
+    },
+    {
+      "stepId": "setup_prompt_step",
+      "name": "Настройка приложения под интересы",
+      "introMessage": "I'm so happy you're here! 😊 Let's tailor Eshe to fit your needs...",
+      "messages": [
+        "I'm so happy you're here! 😊 Let's tailor Eshe to fit your needs so you get the most out of it. It’ll only take a minute—ready to begin?"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_setup_now",
+          "title": "Yes, Let’s Do It",
+          "nextActionId": "select_topics_step"
+        },
+        {
+          "id": "btn_setup_later",
+          "title": "I’ll Do It Later",
+          "nextActionId": "basic_setup_step"
+        }
+      ],
+      "possibleUserAnswers": [
+        {
+          "answerPattern": "yes|btn_setup_now",
+          "assistantReaction": {
+            "message": "Great! Let's pick your topics…",
+            "actions": [],
+            "nextStepId": "select_topics_step"
+          }
+        },
+        {
+          "answerPattern": "later|btn_setup_later",
+          "assistantReaction": {
+            "message": "No worries! I'll still provide useful insights…",
+            "actions": [],
+            "nextStepId": "basic_setup_step"
+          }
+        }
+      ]
+    },
+    {
+      "stepId": "basic_setup_step",
+      "name": "Минимальная настройка",
+      "messages": [
+        "No worries! I'll still make sure you get useful insights. I'll start with general women's health topics, but you can always customize later. 💛"
+      ],
+      "nextActionId": "advice_prompt_step"
+    },
+    {
+      "stepId": "select_topics_step",
+      "name": "Выбор интересующих тем",
+      "messages": [
+        "Let's make Eshe truly yours! 😊 Select the topics you care about the most."
+      ],
+      "answerType": "CHECKBOX",
+      "buttons": [
+        { "id": "btn_nutrition", "title": "Healthy Eating 🍏" },
+        { "id": "btn_sleep", "title": "Better Sleep 😴" },
+        { "id": "btn_stress", "title": "Managing Stress 😌" },
+        { "id": "btn_physical_activity", "title": "Staying Active 🏃‍♀️" },
+        { "id": "btn_mental_health", "title": "Mindfulness & Mental Wellbeing 🧘🏿‍♀️" },
+        { "id": "btn_cycle_management", "title": "Understanding Your Cycle ♀️" },
+        { "id": "btn_skin_and_beauty", "title": "Skincare & Beauty 💆🏿‍♀️" }
+      ],
+      "onSubmit": "selectTopic",
+      "nextActionId": "advice_prompt_step"
+    },
+    {
+      "stepId": "advice_prompt_step",
+      "name": "Персонализированный совет",
+      "messages": [
+        "Awesome! 🎉 Based on your choices, I have a personalized tip just for you. Want to check it out now?"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_get_advice",
+          "title": "Yes, show me the tip",
+          "onClick": "REQUEST_GPT",
+          "prompt": "Provide a personalized health tip based on selected topics.",
+          "nextActionId": "features_prompt_step"
+        },
+        {
+          "id": "btn_later",
+          "title": "Later",
+          "nextActionId": "advice_request_2day_cancel"
+        }
+      ]
+    },
+    {
+      "stepId": "features_prompt_step",
+      "name": "Предложение функций приложения",
+      "messages": [
+        "Now that we're set up, let's explore what Eshe can do for you! Pick what you’d like to try first. 💛"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_checkup",
+          "title": "Take a checkup",
+          "prompt": "Send me a link to the section with checkups",
+          "onClick": "REQUEST_GPT"
+        },
+        {
+          "id": "btn_articles",
+          "title": "Read articles",
+          "prompt": "Send me a link to the article section",
+          "onClick": "REQUEST_GPT"
+        },
+        {
+          "id": "btn_meditations",
+          "title": "Listen to meditations",
+          "prompt": "Send me a link to the meditation section",
+          "onClick": "REQUEST_GPT"
+        }
+      ],
+      "nextActionId": "presale_2day"
+    },
+    {
+      "stepId": "advice_request_2day_cancel",
+      "name": "Declining the Advice",
+      "messages": [
+        "I understand. If you ever need a little guidance or just a friendly check-in, I’m always here. Wishing you a beautiful day ahead! 💛"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_continue",
+          "title": "Continue",
+          "nextActionId": "presale_2day"
+        }
+      ]
+    },
+    {
+      "stepId": "presale_2day",
+      "name": "Exclusive Subscription Offer",
+      "messages": [
+        "Loving the check-ups? There’s even more waiting for you! 🌟 Full access to all check-ups, premium content, and advanced tools is available with Eshe Circle. Right now, you can unlock everything for just **$1.99/month for life** instead of $4.99! This is a one-time offer, just for you. 💛"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_subscribe",
+          "title": "Yes, I want this special offer!",
+          "onClick": "SUBSCRIBE",
+          "nextActionId": "finish"
+        },
+        {
+          "id": "btn_dislike",
+          "title": "I’m not interested",
+          "nextActionId": "finish"
+        },
+        {
+          "id": "btn_later",
+          "title": "I’ll think about it",
+          "nextActionId": "eshe_circle_info"
+        }
+      ]
+    },
+    {
+      "stepId": "eshe_circle_info",
+      "name": "Learn More About Eshe Circle",
+      "messages": [
+        "Curious about everything included in your Eshe Circle membership? Let me show you all the amazing benefits waiting for you! 💛"
+      ],
+      "answerType": "BUTTON",
+      "buttons": [
+        {
+          "id": "btn_learn_more",
+          "title": "Yes, show me!",
+          "onClick": "SUBSCRIBE",
+          "prompt": "Provide a link to the Eshe Circle subscription page.",
+          "nextActionId": "finish"
+        },
+        {
+          "id": "btn_no_thanks",
+          "title": "No, I’m good",
+          "nextActionId": "finish"
+        }
+      ]
+    }
+  ]
+}

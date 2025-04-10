@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from openai import OpenAI
 from src.prompts import SYSTEM_PROMPT
+import pathlib
 
 
 # Load environment variables
@@ -356,15 +357,26 @@ async def process_question(request: Request, payload: dict = Body(...)):
 @app.post("/scenario/execute")
 async def execute_scenario(payload: dict = Body(...)):
     """
-    Универсальный эндпоинт, который принимает JSON со сценарием,
-    метаданными и ответом пользователя.
+    Универсальный эндпоинт, который принимает:
+    - scenarioFileName: название файла сценария (например, "health_ai_assistant_scenario.json")
+    - metadata
+    - userAnswer
     """
-    scenario = payload.get("scenario")
+    scenario_filename = payload.get("scenarioFileName")  # Новый параметр
     metadata = payload.get("metadata", {})
     user_answer = payload.get("userAnswer", {})
 
-    if not scenario:
-        raise HTTPException(status_code=400, detail="Поле 'scenario' обязательно")
+    if not scenario_filename:
+        raise HTTPException(status_code=400, detail="Поле 'scenarioFileName' обязательно")
+
+    # Загружаем сценарий из файла, который находится в папке scenarios/
+    BASE_DIR = pathlib.Path(__file__).parent
+    scenario_path = BASE_DIR / "scenarios" / scenario_filename
+    try:
+        with open(scenario_path, "r", encoding="utf-8") as f:
+            scenario = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить сценарий: {str(e)}")
 
     # Извлекаем ключевые поля
     user_id = metadata.get("userId")
@@ -382,6 +394,9 @@ async def execute_scenario(payload: dict = Body(...)):
     # -- 1. Сохраняем ответ пользователя в БД (по аналогии с разговором) --
     # Загружаем из БД данные пользователя, чтобы объединить историю
     user_data = await get_user_data_from_db(user_id)
+    if not user_data:
+        raise HTTPException(status_code=404, detail=f"Пользователь с ID {user_id} не найден")
+
     # Предположим, что в user_data мы создадим/храним "scenario_history".
     # Если нет, инициализируем пустой список.
     scenario_history = user_data.get("scenario_history", [])
@@ -409,7 +424,6 @@ async def execute_scenario(payload: dict = Body(...)):
                     if btn.get("id") == selected_button_id:
                         next_step_id = btn.get("nextActionId")
                         break
-
                 break
     else:
         # Если первый запрос без userAnswer, берем "первый" шаг сценария
