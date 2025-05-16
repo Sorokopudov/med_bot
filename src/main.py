@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from src.prompts import SYSTEM_PROMPT
 import pathlib
+import time
+from datetime import datetime, timezone, timedelta
 
 
 # Load environment variables
@@ -40,10 +42,15 @@ app.add_middleware(
 templates = Jinja2Templates(directory="src/templates")
 
 # DynamoDB Configuration
-DYNAMODB_ENDPOINT = os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000")
+DYNAMODB_ENDPOINT = os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8001")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "dummy")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "dummy")
 AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+
+WELCOME_TABLE = "WelcomeQueue"
+MESSENGER_BASE_URL = os.getenv("MESSENGER_BASE_URL", "http://localhost:9000")
+WELCOME_DELAY_MIN = int(os.getenv("WELCOME_DELAY_MINUTES", "10"))
+WELCOME_CHECK_INTERVAL = int(os.getenv("WELCOME_CHECK_INTERVAL", "600"))
 
 # TABLE_NAME = "Users"
 # FAISS_SERVICE_URL = "http://172.17.0.1:8010/search"
@@ -124,8 +131,145 @@ async def get_user_data_from_db(user_id: str) -> dict:
         raise HTTPException(status_code=500, detail="Общая ошибка при запросе к базе данных.")
 
 
+async def get_chat_messages(chat_id: str, user_id: str) -> list[dict]:
+    url = f"{MESSENGER_BASE_URL}/internal/messenger/last-messages-by-chat"
+    payload = {"userId": user_id, "chatIds": [chat_id]}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json=payload, timeout=10)
+        resp.raise_for_status()
+        # правильный ключ – "data"
+        items = resp.json().get("data", [])
+        return items[0:1]                      # вернём хотя бы один элемент, если есть
+
+
+
+async def send_welcome_message(chat_id: str, user_id: str) -> None:
+    url = f"{MESSENGER_BASE_URL}/internal/messenger"
+    now_ms = int(time.time() * 1000)
+    payload = {
+        "chatId":   chat_id,
+        "time":     now_ms,                     # ← ДОБАВИЛИ
+        "message": (
+            "Hello, beautiful! Welcome to Eshe. "
+            "This isn’t just a period tracker — Eshe is your all-in-one "
+            "wellness companion. Would you like a quick tour of what’s inside?"
+        ),
+        "type":     "SIMPLE",
+        "senderId": "support",
+        "systemAction": {
+            "id":         "welcome_buttons",
+            "text":       "Choose a topic:",
+            "answerType": "BUTTON",
+            "inputType":  "NONE",
+            "buttons": [
+                {"id": "btn_checkups",  "title": "Tell me about Check-Ups"},
+                {"id": "btn_courses",   "title": "Tell me about Mini-Courses"},
+                {"id": "btn_articles",  "title": "Tell me about Articles"},
+                {"id": "btn_calendars", "title": "Tell me about Calendars"}
+            ]
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json=payload, timeout=10)
+        if resp.status_code >= 400:           # подробный лог, если снова 4xx/5xx
+            logger.error("Messenger 400-response: %s", resp.text)
+        resp.raise_for_status()
+        logger.info("Welcome-сообщение отправлено user=%s", user_id)
+
+
+
+
+async def put_into_welcome_queue(user_id: str) -> None:
+    async with aioboto3.Session().client(
+        "dynamodb",
+        endpoint_url=DYNAMODB_ENDPOINT,
+        region_name=AWS_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    ) as dynamodb:
+        try:
+            await dynamodb.put_item(
+                TableName=WELCOME_TABLE,
+                Item={
+                    "user_id": {"S": user_id},
+                    "created_at": {"N": str(int(time.time()))},
+                    "processed": {"BOOL": False},
+                    "failed_attempts": {"N": "0"},
+                },
+                ConditionExpression="attribute_not_exists(user_id)"   # <-- ключевая строка
+            )
+        except ClientError as ce:
+            # «ConditionalCheckFailed» - OK, запись уже была
+            if ce.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+
+
+async def mark_processed(user_id: str) -> None:
+    async with aioboto3.Session().client(
+        "dynamodb",
+        endpoint_url=DYNAMODB_ENDPOINT,
+        region_name=AWS_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    ) as dynamodb:
+        await dynamodb.update_item(
+            TableName=WELCOME_TABLE,
+            Key={"user_id": {"S": user_id}},
+            UpdateExpression="SET processed = :p",
+            ExpressionAttributeValues={":p": {"BOOL": True}}
+        )
+
+
+# ─────────────────────────  фоновая задача  ──────────────────────────────────
+
+async def welcome_worker() -> None:
+    """Циклически проверяет WelcomeQueue и отправляет welcome при необходимости."""
+    while True:
+        try:
+            async with aioboto3.Session().client(
+                "dynamodb",
+                endpoint_url=DYNAMODB_ENDPOINT,
+                region_name=AWS_REGION,
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            ) as dynamodb:
+
+                scan_resp = await dynamodb.scan(TableName=WELCOME_TABLE)
+                for item in scan_resp.get("Items", []):
+                    if item.get("processed", {}).get("BOOL"):
+                        continue  # уже обработали
+
+                    user_id = item["user_id"]["S"]
+                    created_at = int(item["created_at"]["N"])
+                    if time.time() - created_at < WELCOME_DELAY_MIN * 60:
+                        continue  # ещё рано
+
+                    chat_id = f"sup:{user_id}"
+                    try:
+                        msgs = await get_chat_messages(chat_id, user_id)
+                        # проверяем, есть ли хоть одно сообщение, где senderId == user_id
+                        has_user_msg = any(m.get("lastMessage", {}).get("senderId") == user_id for m in msgs)
+                        if not has_user_msg:
+                            await send_welcome_message(chat_id, user_id)
+                        # вне зависимости, отправили или юзер уже ответил — помечаем “processed”
+                        await mark_processed(user_id)
+                    except Exception as exc:
+                        logger.error(f"Не удалось обработать user={user_id}: {exc}")
+
+        except Exception as e:
+            logger.exception(f"welcome_worker global error: {e}")
+
+        await asyncio.sleep(WELCOME_CHECK_INTERVAL)
+
+
 
 # --- Endpoints ---
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(welcome_worker())
+
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -180,48 +324,51 @@ async def add_user_form(request: Request):
 @app.post("/add_user")
 async def add_user(payload: dict):
     """
-    Добавление или обновление пользователя в базе данных с сохранением существующих данных.
+    Добавление или обновление пользователя.
+    Дополнительно кладём юзера в очередь WelcomeQueue, если он там ещё не был.
     """
     user_id = payload.get("user_id")
     if not user_id:
-        raise HTTPException(status_code=400, detail="Поле user_id обязательно.")
+        raise HTTPException(status_code=400, detail="Поле user_id обязательно")
 
     try:
         dynamodb = await get_dynamodb_resource()
 
-        # Получаем текущие данные пользователя (если они существуют)
-        response = await dynamodb.get_item(
+        resp = await dynamodb.get_item(
             TableName=TABLE_NAME,
             Key={"user_id": {"S": user_id}}
         )
-        current_data = response.get("Item", {})
+        current = resp.get("Item", {})
 
-        # Загружаем существующую историю сообщений, если есть
-        existing_conversation_history = current_data.get("conversation_history", {}).get("S", "[]")
+        hist_raw = current.get("conversation_history", {}).get("S", "[]")
         try:
-            existing_conversation_history = json.loads(existing_conversation_history)
+            conversation_history = json.loads(hist_raw)
         except json.JSONDecodeError:
-            existing_conversation_history = []  # Если JSON некорректный, используем пустой список
+            conversation_history = []
 
-        # Объединяем текущие данные с новыми значениями
-        updated_data = {
+        updated_item = {
             "user_id": {"S": user_id},
-            "name": {"S": payload.get("name", current_data.get("name", {}).get("S", ""))},
-            "birthday": {"S": payload.get("birthday", current_data.get("birthday", {}).get("S", ""))},
-            "health_diary": {"S": payload.get("health_diary", current_data.get("health_diary", {}).get("S", ""))},
-            "conversation_history": {"S": json.dumps(existing_conversation_history)}  # Сохраняем историю
+            "name": {"S": payload.get("name", current.get("name", {}).get("S", ""))},
+            "birthday": {"S": payload.get("birthday", current.get("birthday", {}).get("S", ""))},
+            "health_diary": {"S": payload.get("health_diary", current.get("health_diary", {}).get("S", ""))},
+            "conversation_history": {"S": json.dumps(conversation_history)},
         }
 
-        # Сохраняем обновленные данные
-        await dynamodb.put_item(
-            TableName=TABLE_NAME,
-            Item=updated_data
-        )
+        await dynamodb.put_item(TableName=TABLE_NAME, Item=updated_item)
+
+        # Кладём в WelcomeQueue (если это первый визит ― условие в put_into_welcome_queue)
+        try:
+            await put_into_welcome_queue(user_id)
+        except ClientError as ce:
+            if ce.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                logger.error(f"Ошибка WelcomeQueue для {user_id}: {ce}")
 
         return RedirectResponse(url="/users", status_code=303)
+
     except Exception as e:
-        logger.error(f"Error adding/updating user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to add/update user.")
+        logger.error(f"Error add/update user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add/update user")
+
 
 
 def process_question_sync(user_prompt):
